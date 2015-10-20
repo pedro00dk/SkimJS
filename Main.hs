@@ -29,6 +29,26 @@ evalStmt env (VarDeclStmt []) = return Nil
 evalStmt env (VarDeclStmt (decl:ds)) =
     varDecl env decl >> evalStmt env (VarDeclStmt ds)
 evalStmt env (ExprStmt expr) = evalExpr env expr
+---------------------------------------------------------------------------------------------------
+--Block -> Executa o primeiro, e cria um novo bloco com o proximo
+evalStmt env (BlockStmt []) = return Nil
+evalStmt env (BlockStmt (stmt:stmts)) =
+    do
+        evalStmt env stmt
+        evalStmt env (BlockStmt stmts)
+
+-- If -> Everifica a consição e se for verdade executa o statement
+evalStmt env (IfSingleStmt expr stmt) =
+    do
+        Bool v <- evalExpr env expr
+        if v then evalStmt env stmt else return Nil
+
+--If Else -> Verifica a condição e executa o statement do if se for true ou do else caso contrtário
+evalStmt env (IfStmt expr stmt1 stmt2) =
+    do
+        Bool v <- evalExpr env expr
+        if v then evalStmt env stmt1 else evalStmt env stmt2
+---------------------------------------------------------------------------------------------------
 
 -- Do not touch this one :)
 evaluate :: StateT -> [Statement] -> StateTransformer Value
