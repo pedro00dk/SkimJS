@@ -48,6 +48,22 @@ evalStmt env (IfStmt expr stmt1 stmt2) =
     do
         Bool v <- evalExpr env expr
         if v then evalStmt env stmt1 else evalStmt env stmt2
+
+-- While -> Verifica a condição e executa o statement se for verdade, depois, chama novamente a função passando a mesma expressão e o mesmo statement
+evalStmt env (WhileStmt expr stmt) =
+	do
+		Bool v <- evalExpr env expr
+		if v then do
+			evalStmt env stmt
+			evalStmt env (WhileStmt expr stmt)
+		else return Nil
+
+-- Do While -> Implementada usando o while, bastando apenas avaliar antes o statement e depois criar um Statement While para se encarregar do loop
+evalStmt env (DoWhileStmt stmt expr) = 
+	do
+		evalStmt env stmt
+		evalStmt env (WhileStmt expr stmt)
+
 ---------------------------------------------------------------------------------------------------
 
 -- Do not touch this one :)
