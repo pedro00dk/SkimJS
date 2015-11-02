@@ -32,38 +32,45 @@ evalStmt env (ExprStmt expr) = evalExpr env expr
 ---------------------------------------------------------------------------------------------------
 --Block -> Executa o primeiro, e cria um novo bloco com o proximo
 evalStmt env (BlockStmt []) = return Nil
-evalStmt env (BlockStmt (stmt:stmts)) =
-    do
-        evalStmt env stmt
-        evalStmt env (BlockStmt stmts)
+evalStmt env (BlockStmt (stmt:stmts)) = do
+    v <- evalStmt env stmt
+    case v of
+        Break -> return Break
+        Continue -> return Continue
+        _ -> evalStmt env (BlockStmt stmts)
 
 -- If -> Everifica a consição e se for verdade executa o statement
-evalStmt env (IfSingleStmt expr stmt) =
-    do
-        Bool v <- evalExpr env expr
-        if v then evalStmt env stmt else return Nil
+evalStmt env (IfSingleStmt expr stmt) = do
+    Bool v <- evalExpr env expr
+    if v then evalStmt env stmt else return Nil
 
 --If Else -> Verifica a condição e executa o statement do if se for true ou do else caso contrtário
-evalStmt env (IfStmt expr stmt1 stmt2) =
-    do
-        Bool v <- evalExpr env expr
-        if v then evalStmt env stmt1 else evalStmt env stmt2
+evalStmt env (IfStmt expr stmt1 stmt2) = do
+    Bool v <- evalExpr env expr
+    if v then evalStmt env stmt1 else evalStmt env stmt2
 
 -- While -> Verifica a condição e executa o statement se for verdade, depois, chama novamente a função passando a mesma expressão e o mesmo statement
-evalStmt env (WhileStmt expr stmt) =
-	do
-		Bool v <- evalExpr env expr
-		if v then do
-			evalStmt env stmt
-			evalStmt env (WhileStmt expr stmt)
-		else return Nil
+evalStmt env (WhileStmt expr stmt) = do
+    Bool v <- evalExpr env expr
+    if v then do 
+        b <- evalStmt env stmt
+        case b of
+            Break -> return Break
+            _ -> evalStmt env (WhileStmt expr stmt)
+    else return Nil
 
 -- Do While -> Implementada usando o while, bastando apenas avaliar antes o statement e depois criar um Statement While para se encarregar do loop
-evalStmt env (DoWhileStmt stmt expr) = 
-	do
-		evalStmt env stmt
-		evalStmt env (WhileStmt expr stmt)
+evalStmt env (DoWhileStmt stmt expr) = do
+    b <- evalStmt env stmt
+    case b of
+        Break -> return Nil
+        _ -> evalStmt env (WhileStmt expr stmt)
 
+--BreakStmt (Maybe Id) -- ^ @break lab;@, spec 12.8
+evalStmt env (BreakStmt m) = return Break;
+
+--ContinueStmt (Maybe Id) -- ^ @continue lab;@, spec 12.7
+evalStmt env (ContinueStmt m) = return Continue;
 ---------------------------------------------------------------------------------------------------
 
 -- Do not touch this one :)
