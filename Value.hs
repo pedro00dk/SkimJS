@@ -11,6 +11,7 @@ data Value = Bool Bool
     | Continue
     | Throw Value
     | Function Id [Id] [Statement]
+    | Gvar
     | Nil
 
 --
@@ -26,8 +27,14 @@ instance Show Value where
   show Break = "break"
   show Continue = "continue"
   show (Throw value) = "throw " ++ show value
-  show (Function (Id name) args stmts) = "function " ++ name ++ "(" ++ ")"
+  show (Function (Id name) args stmts) = "function " ++ name ++ "(" ++ showArgs args ++")"
   show Nil = "undefined"
+
+showArgs [] = ""
+showArgs ((Id arg):xs) = show arg ++ showCommaArgs xs
+
+showCommaArgs [] = ""
+showCommaArgs ((Id arg):xs) = ", " ++ show arg ++ showCommaArgs xs
 
   
 -- This function could be replaced by (unwords.map show). The unwords

@@ -19,9 +19,42 @@ evalExpr env (InfixExpr op expr1 expr2) = do
     v2 <- evalExpr env expr2
     infixOp env op v1 v2
 evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
-    stateLookup env var -- crashes if the variable doesn't exist
+    v <- stateLookup env var
     e <- evalExpr env expr
-    setVar var e
+    case v of
+        Gvar -> createGlobalVar var e
+        _ -> setVar var e
+---------------------------------------------------------------------------------------------------
+-- Call Function -- CallExpr Expression [Expression] -- ^ @f(x,y,z)@, spec 11.2.3
+evalExpr env (CallExpr name params) = do
+    f <- evalExpr env name
+    case f of
+        Function func args stmts -> do
+            Bool match <- matchLength env params args
+            if match then do
+                pushScope env
+                createArgs env args params
+                r <- evalStmt env (BlockStmt stmts)
+                popScope env
+            else error $ "Invalid params amount"
+        _ -> error $ "Variable " ++ show name ++ " not is a function"
+
+---------------------------------------------------------------------------------------------------
+-- Case match args
+matchLength :: StateT -> [Expression] -> [Id] -> StateTransformer Value
+matchLength env [] [] = return (Bool True)
+matchLength env [] args = return (Bool False)
+matchLength env params [] = return (Bool False)
+matchLength env (params:xs) (arg:ys) = matchLength env xs ys
+
+createArgs :: StateT -> [Id] -> [Expression] -> StateTransformer Value
+createArgs [] [] params = return Nil
+createArgs env ((Id arg):xs) (param:ys) = do
+    v <- evalExpr env param
+    setVar arg v
+    createArgs env xs ys
+---------------------------------------------------------------------------------------------------
+
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
 evalStmt env EmptyStmt = return Nil
@@ -43,32 +76,55 @@ evalStmt env (BlockStmt (stmt:stmts)) = do
 -- If
 evalStmt env (IfSingleStmt expr stmt) = do
     Bool v <- evalExpr env expr
-    if v then evalStmt env stmt else return Nil
+    if v then do
+        pushScope env
+        a <- evalStmt env stmt
+        popScope env
+        return a
+    else return Nil
 
 --If Else
 evalStmt env (IfStmt expr stmt1 stmt2) = do
     Bool v <- evalExpr env expr
-    if v then evalStmt env stmt1 else evalStmt env stmt2
+    if v then do
+        pushScope env
+        a <- evalStmt env stmt1
+        popScope env
+        return a
+    else do
+        pushScope env
+        a <- evalStmt env stmt2
+        popScope env
+        return a
 
 -- While
 evalStmt env (WhileStmt expr stmt) = do
-    Bool v <- evalExpr env expr
-    if v then do 
+    Bool b <- evalExpr env expr
+    if b then do 
+        pushScope env
         v <- evalStmt env stmt
+        popScope env
         case v of
             Break -> return Break
             Throw t -> return (Throw t)
             _ -> evalStmt env (WhileStmt expr stmt)
+        
     else return Nil
 
 -- Do While
 evalStmt env (DoWhileStmt stmt expr) = do
+    pushScope env
     v <- evalStmt env stmt
     case v of
-        Break -> return Nil
-        Throw t -> return (Throw t)
-        _ -> evalStmt env (WhileStmt expr stmt)
-
+        Break -> do
+            popScope env
+            return Nil
+        Throw t -> do
+            popScope env
+            return (Throw t)
+        _ -> do
+            evalStmt env (WhileStmt expr stmt)
+            popScope env
 -- Break
 evalStmt env (BreakStmt m) = return Break;
 
@@ -83,7 +139,6 @@ evalStmt env (ThrowStmt expr) = do
 -- functions
 -- saving a function as a value
 evalStmt env (FunctionStmt (Id name) args stmts) = setVar name (Function (Id name) args stmts)
-
 
 ---------------------------------------------------------------------------------------------------
 
@@ -116,32 +171,64 @@ infixOp env OpLOr  (Bool v1) (Bool v2) = return $ Bool $ v1 || v2
 -- Environment and auxiliary functions
 --
 
-environment :: Map String Value
-environment = empty
+environment :: [Map String Value]
+environment = [empty]
 
 stateLookup :: StateT -> String -> StateTransformer Value
 stateLookup env var = ST $ \s ->
-    -- this way the error won't be skipped by lazy evaluation
-    case Map.lookup var (union s env) of
-        Nothing -> error $ "Variable " ++ show var ++ " not defiend."
+    case scopeLookup s var of
+        Nothing -> (Gvar, s)
         Just val -> (val, s)
+
+scopeLookup :: [Map String Value] -> String -> Maybe Value
+scopeLookup [] _ = Nothing
+scopeLookup (s:scopes) var =
+    case Map.lookup var s of
+        Nothing -> scopeLookup scopes var
+        Just val -> Just val
 
 varDecl :: StateT -> VarDecl -> StateTransformer Value
 varDecl env (VarDecl (Id id) maybeExpr) = do
     case maybeExpr of
-        Nothing -> setVar id Nil
+        Nothing -> createLocalVar id Nil
         (Just expr) -> do
             val <- evalExpr env expr
-            setVar id val
+            createLocalVar id val
 
+-- Modified to set a var in the top scope
 setVar :: String -> Value -> StateTransformer Value
-setVar var val = ST $ \s -> (val, insert var val s)
+setVar var val = ST $ \s -> (val, (updateVar var val s))
+    
+updateVar :: String -> Value -> StateT -> StateT
+updateVar _ _ [] = error $ "erro"
+updateVar var val stt = case (Map.lookup var (head stt)) of
+        Nothing -> (head stt):(updateVar var val (tail stt))
+        Just val -> (insert var val (head stt)):(tail stt)
+
+createLocalVar :: String -> Value -> StateTransformer Value
+createLocalVar var val = ST $ \s -> (val, (insert var val (head s)):(tail s))
+
+createGlobalVar :: String -> Value -> StateTransformer Value
+createGlobalVar var val = ST $ \s -> (val, createGlobalVar0 var val s)
+ 
+createGlobalVar0 :: String -> Value -> StateT -> StateT
+createGlobalVar0 var val stt = if null (tail stt) then (insert var val (head stt)):[] else (head stt):(createGlobalVar0 var val (tail stt))
+
+-- Function to create a new scope
+pushScope :: StateT -> StateTransformer Value
+pushScope env = ST $ \s -> (Nil, empty:s)
+
+-- Function to delete the top scope
+popScope :: StateT -> StateTransformer Value
+popScope env = ST $ \s -> (Nil, (tail s))
+
 
 --
 -- Types and boilerplate
 --
 
-type StateT = Map String Value
+type StateT = [Map String Value]
+
 data StateTransformer t = ST (StateT -> (t, StateT))
 
 instance Monad StateTransformer where
@@ -163,11 +250,12 @@ instance Applicative StateTransformer where
 --
 
 showResult :: (Value, StateT) -> String
+showResult (val, []) = ""
 showResult (val, defs) =
-    show val ++ "\n" ++ show (toList $ union defs environment) ++ "\n"
+    show val ++ "\n" ++ show (toList $ union (head defs) (head environment)) ++ "\n" ++ showResult (val, tail(defs))
 
 getResult :: StateTransformer Value -> (Value, StateT)
-getResult (ST f) = f empty
+getResult (ST f) = f [empty]
 
 main :: IO ()
 main = do
