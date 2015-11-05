@@ -29,30 +29,22 @@ evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
 evalExpr env (CallExpr name params) = do
     f <- evalExpr env name
     case f of
-        Function func args stmts -> do
-            Bool match <- matchLength env params args
-            if match then do
-                pushScope env
-                createArgs env args params
-                r <- evalStmt env (BlockStmt stmts)
-                popScope env
-            else error $ "Invalid params amount"
+        Function _ args stmts -> do
+            pushScope env
+            createArgs env args params
+            evalStmt env (BlockStmt stmts)
+            popScope env
         _ -> error $ "Variable " ++ show name ++ " not is a function"
 
 ---------------------------------------------------------------------------------------------------
--- Case match args
-matchLength :: StateT -> [Expression] -> [Id] -> StateTransformer Value
-matchLength env [] [] = return (Bool True)
-matchLength env [] args = return (Bool False)
-matchLength env params [] = return (Bool False)
-matchLength env (params:xs) (arg:ys) = matchLength env xs ys
-
+-- Create the local parameter variables
 createArgs :: StateT -> [Id] -> [Expression] -> StateTransformer Value
-createArgs [] [] params = return Nil
+createArgs env [] [] = return Nil
 createArgs env ((Id arg):xs) (param:ys) = do
     v <- evalExpr env param
-    setVar arg v
+    createLocalVar arg v
     createArgs env xs ys
+createArgs env _ _ = error $ "Invalid amount of parameters"
 ---------------------------------------------------------------------------------------------------
 
 
@@ -138,7 +130,7 @@ evalStmt env (ThrowStmt expr) = do
 
 -- functions
 -- saving a function as a value
-evalStmt env (FunctionStmt (Id name) args stmts) = setVar name (Function (Id name) args stmts)
+evalStmt env (FunctionStmt (Id name) args stmts) = createGlobalVar name (Function (Id name) args stmts)
 
 ---------------------------------------------------------------------------------------------------
 
