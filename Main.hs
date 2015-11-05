@@ -195,7 +195,7 @@ updateVar :: String -> Value -> StateT -> StateT
 updateVar _ _ [] = error $ "erro"
 updateVar var val stt = case (Map.lookup var (head stt)) of
         Nothing -> (head stt):(updateVar var val (tail stt))
-        Just val -> (insert var val (head stt)):(tail stt)
+        Just v -> (insert var val (head stt)):(tail stt)
 
 createLocalVar :: String -> Value -> StateTransformer Value
 createLocalVar var val = ST $ \s -> (val, (insert var val (head s)):(tail s))
