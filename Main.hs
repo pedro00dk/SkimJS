@@ -19,6 +19,20 @@ evalExpr env (BoolLit bool) = return $ Bool bool
 evalExpr env (StringLit str) = return $ String str
 evalExpr env (ObjectLit []) = return $ Object $ []
 evalExpr env (ObjectLit props) = parseObject env props (Object [])
+
+-- Accessing object properties using dot -> this just cant access Integer properties
+evalExpr env (DotRef expr id) = do
+    obj <- evalExpr env expr
+    getObjectDotProperty env obj id
+
+-- Accessing properties using brackets -> can get all types of properties
+evalExpr env (BracketRef expr idexpr) = do
+    obj <- evalExpr env expr
+    case idexpr of
+        VarRef (Id id) -> do getObjectBraketProperty env obj (String id) -- Needs to be catched, because the evaluation trys to get a possible value from the mem
+        _ -> do
+            id <- evalExpr env idexpr
+            getObjectBraketProperty env obj id
 ---------------------------------------------------------------------------------------------------
 evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
@@ -132,6 +146,50 @@ parseObject env ((prop, expr):xs) (Object atts) =
     PropNum num -> do
         v <- evalExpr env expr
         parseObject env xs (Object (atts ++ [INTType num v]))
+
+-- Gets an object property unsing dots, if have two or more equals properties, gets the first
+getObjectDotProperty :: StateT -> Value -> Id -> StateTransformer Value
+getObjectDotProperty env (Object []) (Id id) = error $ "Property not exists"
+getObjectDotProperty env (Object (attr:xs)) (Id prop) = case attr of
+    IDType id val -> do
+        Bool b <- equalsStr env id prop
+        if b then return val else getObjectDotProperty env (Object xs) (Id prop)
+    STRType str val -> do
+        Bool b <- equalsStr env str prop
+        if b then return val else getObjectDotProperty env (Object xs) (Id prop)
+    INTType num val -> getObjectDotProperty env (Object xs) (Id prop) -- DotRef cant catch number properties
+
+-- Gets an object property unsing brackets, if have two or more equals properties, gets the first
+getObjectBraketProperty :: StateT -> Value -> Value -> StateTransformer Value
+getObjectBraketProperty env (Object []) prop = error $ "Property not exists"
+getObjectBraketProperty env (Object (attr:xs)) prop =
+    case prop of
+        String str -> -- Strings can get all type of attributes
+            case attr of
+                IDType id val -> do
+                    Bool b <- equalsStr env id str
+                    if b then return val else getObjectBraketProperty env (Object xs) prop
+                STRType s val -> do
+                    Bool b <- equalsStr env s str
+                    if b then return val else getObjectBraketProperty env (Object xs) prop
+                INTType num val -> do
+                    Bool b <- equalsStr env (show num) str
+                    if b then return val else getObjectBraketProperty env (Object xs) prop
+        Int int -> -- Ints just can get Int type attributes
+            case attr of
+                IDType id val -> getObjectBraketProperty env (Object xs) prop
+                STRType str val -> getObjectBraketProperty env (Object xs) prop
+                INTType num val -> do
+                    Bool b <- equalsStr env (show num) (show prop)
+                    if b then return val else getObjectBraketProperty env (Object xs) prop
+        _ -> error $ "Not implemented"
+
+-- Verify if two strings are equals
+equalsStr :: StateT -> String -> String -> StateTransformer Value
+equalsStr env [] [] = return $ Bool True
+equalsStr env (c1:xs) (c2:ys) = if c1 == c2 then equalsStr env xs ys else return $ Bool False
+equalsStr _ _ _ = return $ Bool False
+
 ---------------------------------------------------------------------------------------------------
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
