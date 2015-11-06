@@ -18,22 +18,34 @@ evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
     v2 <- evalExpr env expr2
     infixOp env op v1 v2
+---------------------------------------------------------------------------------------------------
+evalExpr env (PrefixExpr op expr) = do
+    v <- evalExpr env expr
+    prefixOp env op v
+
 evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
     v <- stateLookup env var
     e <- evalExpr env expr
     case v of
         Gvar -> createGlobalVar var e
         _ -> setVar var e
----------------------------------------------------------------------------------------------------
--- Call Function -- CallExpr Expression [Expression] -- ^ @f(x,y,z)@, spec 11.2.3
+
+-- Call Function
 evalExpr env (CallExpr name params) = do
     f <- evalExpr env name
     case f of
         Function _ args stmts -> do
             pushScope env
             createArgs env args params
-            evalStmt env (BlockStmt stmts)
+            v <- evalStmt env (BlockStmt stmts)
             popScope env
+            case v of
+                Break -> error $ "Illegal Statement"
+                Continue -> error $ "Illegal Statement"
+                Throw t -> error $ "Illegal Statement"
+                Return r -> return r;
+                NReturn -> return Nil
+                _ -> return Nil
         _ -> error $ "Variable " ++ show name ++ " not is a function"
 
 ---------------------------------------------------------------------------------------------------
@@ -63,6 +75,8 @@ evalStmt env (BlockStmt (stmt:stmts)) = do
         Break -> return Break
         Continue -> return Continue
         Throw t -> return (Throw t)
+        Return r -> return (Return r)
+        NReturn -> return Nil
         _ -> evalStmt env (BlockStmt stmts)
 
 -- If
@@ -99,6 +113,9 @@ evalStmt env (WhileStmt expr stmt) = do
         case v of
             Break -> return Break
             Throw t -> return (Throw t)
+            Return r -> return (Return r)
+            NReturn -> return Nil
+            Continue -> evalStmt env (WhileStmt expr stmt)
             _ -> evalStmt env (WhileStmt expr stmt)
         
     else return Nil
@@ -107,16 +124,17 @@ evalStmt env (WhileStmt expr stmt) = do
 evalStmt env (DoWhileStmt stmt expr) = do
     pushScope env
     v <- evalStmt env stmt
+    Bool b <- evalExpr env expr
+    popScope env
     case v of
-        Break -> do
-            popScope env
-            return Nil
-        Throw t -> do
-            popScope env
-            return (Throw t)
-        _ -> do
-            evalStmt env (WhileStmt expr stmt)
-            popScope env
+        Break -> return Break
+        Throw t -> return (Throw t)
+        Return r -> return (Return r)
+        NReturn -> return Nil
+        Continue -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
+        _ -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
+
+
 -- Break
 evalStmt env (BreakStmt m) = return Break;
 
@@ -132,6 +150,14 @@ evalStmt env (ThrowStmt expr) = do
 -- saving a function as a value
 evalStmt env (FunctionStmt (Id name) args stmts) = createGlobalVar name (Function (Id name) args stmts)
 
+-- Return functions
+evalStmt env (ReturnStmt mexpr) =
+    case mexpr of
+        Nothing -> return NReturn
+        Just val -> do
+            v <- evalExpr env val
+            return (Return v)
+
 ---------------------------------------------------------------------------------------------------
 
 -- Do not touch this one :)
@@ -142,6 +168,13 @@ evaluate env stmts = foldl1 (>>) $ map (evalStmt env) stmts
 --
 -- Operators
 --
+
+-- Implementation of prefix operations
+prefixOp :: StateT -> PrefixOp -> Value -> StateTransformer Value
+prefixOp env PrefixLNot  (Int  v) = return $ Int  $ (-v)
+prefixOp env PrefixMinus  (Int  v) = return $ Int  $ (-v)
+prefixOp env PrefixBNot  (Bool  v) = return $ Bool  $ not v
+
 
 infixOp :: StateT -> InfixOp -> Value -> Value -> StateTransformer Value
 infixOp env OpAdd  (Int  v1) (Int  v2) = return $ Int  $ v1 + v2
@@ -154,6 +187,9 @@ infixOp env OpLEq  (Int  v1) (Int  v2) = return $ Bool $ v1 <= v2
 infixOp env OpGT   (Int  v1) (Int  v2) = return $ Bool $ v1 > v2
 infixOp env OpGEq  (Int  v1) (Int  v2) = return $ Bool $ v1 >= v2
 infixOp env OpEq   (Int  v1) (Int  v2) = return $ Bool $ v1 == v2
+-- Added different operation to Int values
+infixOp env OpNEq  (Int  v1) (Int  v2) = return $ Bool $ v1 /= v2
+
 infixOp env OpEq   (Bool v1) (Bool v2) = return $ Bool $ v1 == v2
 infixOp env OpNEq  (Bool v1) (Bool v2) = return $ Bool $ v1 /= v2
 infixOp env OpLAnd (Bool v1) (Bool v2) = return $ Bool $ v1 && v2

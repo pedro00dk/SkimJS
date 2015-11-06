@@ -11,6 +11,8 @@ data Value = Bool Bool
     | Continue
     | Throw Value
     | Function Id [Id] [Statement]
+    | Return Value
+    | NReturn
     | Gvar
     | Nil
 
