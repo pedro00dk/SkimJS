@@ -156,6 +156,23 @@ evalStmt env (IfStmt expr stmt1 stmt2) = do
         popScope env
         return a
 
+-- SwitchStmt Expression [CaseClause]
+-- Switch
+-- Evaluate the clause, because can be an unary assign
+evalStmt env (SwitchStmt expr []) = evalExpr env expr
+evalStmt env (SwitchStmt expr (cl:xs)) = do
+    a <- evalExpr env expr
+    case cl of
+        CaseClause cexpr stmts -> do
+            ac <- evalExpr env cexpr
+            Bool b <- infixOp env OpEq a ac
+            if b then do -- Multiple switch clauses uses the same scope
+                pushScope env
+                v <- evalClause env (cl:xs)
+                popScope env
+                return v
+            else evalStmt env (SwitchStmt expr xs)
+
 -- While
 evalStmt env (WhileStmt expr stmt) = do
     Bool b <- evalExpr env expr
@@ -216,6 +233,31 @@ evalStmt env (ReturnStmt mexpr) =
 ---------------------------------------------------------------------------------------------------
 
 ---------------------------------------------------------------------------------------------------
+-- Switch support function 
+evalClause :: StateT -> [CaseClause] -> StateTransformer Value
+evalClause env [] = return Nil
+evalClause env (cl:xs) = do
+    case cl of
+        CaseClause expr stmts -> do
+            v <- evalStmt env (BlockStmt stmts)
+            case v of
+                Break -> return Nil
+                Continue -> error $ "Illegal Statement"
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return Nil
+                _ -> evalClause env xs
+        CaseDefault stmts -> do
+            v <- evalStmt env (BlockStmt stmts)
+            case v of
+                Break -> return Nil
+                Continue -> error $ "Illegal Statement"
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return Nil
+                _ -> evalClause env xs
+
+
 -- For support functions
 forBegin :: StateT -> ForInit -> Maybe Expression -> Maybe Expression -> Statement -> StateTransformer Value
 forBegin env init test inc stmt = do
