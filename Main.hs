@@ -15,6 +15,11 @@ evalExpr :: StateT -> Expression -> StateTransformer Value
 evalExpr env (VarRef (Id id)) = stateLookup env id
 evalExpr env (IntLit int) = return $ Int int
 evalExpr env (BoolLit bool) = return $ Bool bool
+---------------------------------------------------------------------------------------------------
+evalExpr env (StringLit str) = return $ String str
+evalExpr env (ObjectLit []) = return $ Object $ []
+evalExpr env (ObjectLit props) = parseObject env props (Object [])
+---------------------------------------------------------------------------------------------------
 evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
     v2 <- evalExpr env expr2
@@ -111,6 +116,22 @@ createArgs env ((Id arg):xs) (param:ys) = do
     createLocalVar arg v
     createArgs env xs ys
 createArgs env _ _ = error $ "Invalid amount of parameters"
+
+-- Create Object from properties
+parseObject :: StateT -> [(Prop, Expression)] -> Value -> StateTransformer Value
+parseObject env [] (Object []) = return (Object [])
+parseObject env [] (Object atts) = return (Object atts)
+parseObject env ((prop, expr):xs) (Object atts) =
+    case prop of
+    PropId (Id id) -> do
+        v <- evalExpr env expr
+        parseObject env xs (Object (atts ++ [IDType id v]))
+    PropString str -> do
+        v <- evalExpr env expr
+        parseObject env xs (Object (atts ++ [STRType str v]))
+    PropNum num -> do
+        v <- evalExpr env expr
+        parseObject env xs (Object (atts ++ [INTType num v]))
 ---------------------------------------------------------------------------------------------------
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
