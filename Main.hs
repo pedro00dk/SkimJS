@@ -134,6 +134,8 @@ evalStmt env (DoWhileStmt stmt expr) = do
         Continue -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
         _ -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
 
+-- For
+evalStmt env (ForStmt init test inc stmt) = forBegin env init test inc stmt
 
 -- Break
 evalStmt env (BreakStmt m) = return Break;
@@ -158,6 +160,100 @@ evalStmt env (ReturnStmt mexpr) =
             v <- evalExpr env val
             return (Return v)
 
+---------------------------------------------------------------------------------------------------
+
+---------------------------------------------------------------------------------------------------
+-- For support functions
+forBegin :: StateT -> ForInit -> Maybe Expression -> Maybe Expression -> Statement -> StateTransformer Value
+forBegin env init test inc stmt = do
+    pushScope env
+    case init of
+        NoInit -> return Nil
+        VarInit vars -> evalStmt env (VarDeclStmt vars) -- Create local vars
+        ExprInit expr -> evalExpr env expr
+    case test of
+        Nothing -> do
+            pushScope env
+            v <- evalStmt env stmt
+            popScope env
+            case v of
+                Break -> do
+                    popScope env
+                    return Break
+                Throw t -> do
+                    popScope env
+                    return (Throw t)
+                Return r -> do
+                    popScope env
+                    return (Return r)
+                NReturn -> do
+                    popScope env
+                    return Nil
+                Continue -> do
+                    forContinue env init test inc stmt
+                    popScope env
+                _ -> do
+                    forContinue env init test inc stmt
+                    popScope env
+        Just expr -> do
+            Bool b <- evalExpr env expr
+            if b then do
+                pushScope env
+                v <- evalStmt env stmt
+                popScope env
+                case v of
+                    Break -> do
+                        popScope env
+                        return Break
+                    Throw t -> do
+                        popScope env
+                        return (Throw t)
+                    Return r -> do
+                        popScope env
+                        return (Return r)
+                    NReturn -> do
+                        popScope env
+                        return Nil
+                    Continue -> do
+                        forContinue env init test inc stmt
+                        popScope env
+                    _ -> do
+                        forContinue env init test inc stmt
+                        popScope env
+            else popScope env
+
+forContinue :: StateT -> ForInit -> Maybe Expression -> Maybe Expression -> Statement -> StateTransformer Value
+forContinue env init test inc stmt = do
+    case inc of
+        Nothing -> return Nil
+        Just expr -> evalExpr env expr
+    Bool b <- return (Bool False)
+    case test of
+        Nothing -> do
+            pushScope env
+            v <- evalStmt env stmt
+            popScope env
+            case v of
+                Break -> return Break
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return Nil
+                Continue -> forContinue env init test inc stmt
+                _ -> forContinue env init test inc stmt
+        Just expr -> do
+            Bool b <- evalExpr env expr
+            if b then do
+                pushScope env
+                v <- evalStmt env stmt
+                popScope env
+                case v of
+                    Break -> return Break
+                    Throw t -> return (Throw t)
+                    Return r -> return (Return r)
+                    NReturn -> return Nil
+                    Continue -> forContinue env init test inc stmt
+                    _ -> forContinue env init test inc stmt
+            else return Nil
 ---------------------------------------------------------------------------------------------------
 
 -- Do not touch this one :)
