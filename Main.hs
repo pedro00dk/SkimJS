@@ -93,13 +93,14 @@ evalExpr env (CallExpr name params) = do
             v <- evalStmt env (BlockStmt stmts)
             popScope env
             case v of
-                Break -> error $ "Illegal Statement"
-                Continue -> error $ "Illegal Statement"
-                Throw t -> error $ "Illegal Statement"
+                Break -> error $ "Illegal break statement in function"
+                Continue -> error $ "Illegal continue statement in function"
+                Throw t -> error $ "Illegal throw statement without handle"
                 Return r -> return r;
                 NReturn -> return Nil
                 _ -> return Nil
         _ -> error $ "Variable " ++ show name ++ " not is a function"
+---------------------------------------------------------------------------------------------------
 
 ---------------------------------------------------------------------------------------------------
 -- Create the local parameter variables
@@ -111,7 +112,6 @@ createArgs env ((Id arg):xs) (param:ys) = do
     createArgs env xs ys
 createArgs env _ _ = error $ "Invalid amount of parameters"
 ---------------------------------------------------------------------------------------------------
-
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
 evalStmt env EmptyStmt = return Nil
@@ -218,11 +218,36 @@ evalStmt env (ThrowStmt expr) = do
     v <- evalExpr env expr
     return (Throw v)
 
+-- Try - Catch and finally can read the throw scope vars, but finally cant read the catch vars, so, catch needs of a new scope
+evalStmt env (TryStmt stmt catch finally) = do
+    pushScope env
+    v <- evalStmt env stmt
+    case v of
+        Break -> return Break
+        Throw t ->
+            case catch of
+                Nothing -> return Nil
+                Just (CatchClause (Id id) cstmt) -> do
+                    pushScope env
+                    createLocalVar id t
+                    evalStmt env cstmt
+                    popScope env
+        Return r -> return (Return r)
+        NReturn -> return Nil
+        Continue -> return Break
+        _ -> return Nil
+    case finally of
+        Nothing -> popScope env
+        Just fstmt -> do
+            evalStmt env fstmt
+            popScope env
+
+
 -- functions
 -- saving a function as a value
 evalStmt env (FunctionStmt (Id name) args stmts) = createGlobalVar name (Function (Id name) args stmts)
 
--- Return functions
+-- Return in functions
 evalStmt env (ReturnStmt mexpr) =
     case mexpr of
         Nothing -> return NReturn
@@ -360,11 +385,13 @@ evaluate env stmts = foldl1 (>>) $ map (evalStmt env) stmts
 -- Operators
 --
 
+---------------------------------------------------------------------------------------------------
 -- Implementation of prefix operations
 prefixOp :: StateT -> PrefixOp -> Value -> StateTransformer Value
 prefixOp env PrefixLNot   (Int  v) = return $ Int  $ (-v)
 prefixOp env PrefixMinus  (Int  v) = return $ Int  $ (-v)
 prefixOp env PrefixBNot   (Bool  v) = return $ Bool  $ not v
+---------------------------------------------------------------------------------------------------
 
 
 infixOp :: StateT -> InfixOp -> Value -> Value -> StateTransformer Value
@@ -374,21 +401,27 @@ infixOp env OpMul  (Int  v1) (Int  v2) = return $ Int  $ v1 * v2
 infixOp env OpDiv  (Int  v1) (Int  v2) = return $ Int  $ div v1 v2
 infixOp env OpMod  (Int  v1) (Int  v2) = return $ Int  $ mod v1 v2
 
+---------------------------------------------------------------------------------------------------
 infixOp env OpLShift    (Int  v1) (Int  v2) = return $ Int  $ shiftL v1 v2
 infixOp env OpSpRShift  (Int  v1) (Int  v2) = return $ Int  $ shiftR v1 v2
 -- OpZfRShift >>> Logical right shitf not implemented
 infixOp env OpZfRShift  (Int  v1) (Int  v2) = error $ "Operation not implemented"
+---------------------------------------------------------------------------------------------------
 
 
 infixOp env OpEq   (Int  v1) (Int  v2) = return $ Bool $ v1 == v2
+---------------------------------------------------------------------------------------------------
 infixOp env OpNEq  (Int  v1) (Int  v2) = return $ Bool $ v1 /= v2
+---------------------------------------------------------------------------------------------------
 infixOp env OpLT   (Int  v1) (Int  v2) = return $ Bool $ v1 < v2
 infixOp env OpLEq  (Int  v1) (Int  v2) = return $ Bool $ v1 <= v2
 infixOp env OpGT   (Int  v1) (Int  v2) = return $ Bool $ v1 > v2
 infixOp env OpGEq  (Int  v1) (Int  v2) = return $ Bool $ v1 >= v2
+---------------------------------------------------------------------------------------------------
 infixOp env OpBAnd (Int  v1) (Int  v2) = error $ "Operation not implemented"
 infixOp env OpBOr  (Int  v1) (Int  v2) = error $ "Operation not implemented"
 infixOp env OpBXor (Int  v1) (Int  v2) = error $ "Operation not implemented"
+---------------------------------------------------------------------------------------------------
 
 infixOp env OpEq   (Bool v1) (Bool v2) = return $ Bool $ v1 == v2
 infixOp env OpNEq  (Bool v1) (Bool v2) = return $ Bool $ v1 /= v2
@@ -399,6 +432,7 @@ infixOp env OpLOr  (Bool v1) (Bool v2) = return $ Bool $ v1 || v2
 -- Environment and auxiliary functions
 --
 
+---------------------------------------------------------------------------------------------------
 environment :: [Map String Value]
 environment = [empty]
 
@@ -428,7 +462,7 @@ setVar :: String -> Value -> StateTransformer Value
 setVar var val = ST $ \s -> (val, (updateVar var val s))
     
 updateVar :: String -> Value -> StateT -> StateT
-updateVar _ _ [] = error $ "erro"
+updateVar _ _ [] = error $ "Unreachable error"
 updateVar var val stt = case (Map.lookup var (head stt)) of
         Nothing -> (head stt):(updateVar var val (tail stt))
         Just v -> (insert var val (head stt)):(tail stt)
@@ -449,7 +483,7 @@ pushScope env = ST $ \s -> (Nil, empty:s)
 -- Function to delete the top scope
 popScope :: StateT -> StateTransformer Value
 popScope env = ST $ \s -> (Nil, (tail s))
-
+---------------------------------------------------------------------------------------------------
 
 --
 -- Types and boilerplate
