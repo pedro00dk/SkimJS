@@ -5,6 +5,7 @@ import Control.Applicative hiding (empty)
 import Data.Map as Map (Map, insert, lookup, union, toList, empty)
 import Debug.Trace
 import Value
+import Data.Bits
 
 --
 -- Evaluate functions
@@ -19,16 +20,68 @@ evalExpr env (InfixExpr op expr1 expr2) = do
     v2 <- evalExpr env expr2
     infixOp env op v1 v2
 ---------------------------------------------------------------------------------------------------
+-- Evaluation of expressions with prefixed operators
 evalExpr env (PrefixExpr op expr) = do
     v <- evalExpr env expr
     prefixOp env op v
 
-evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
+-- Unary assign -> i++, i--, ++i, --i
+evalExpr env (UnaryAssignExpr op (LVar var)) = do
+    Int v <- stateLookup env var
+    case op of
+        PrefixInc -> do
+            setVar var (Int (v + 1))
+            return (Int (v + 1))
+        PrefixDec -> do
+            setVar var (Int (v - 1))
+            return (Int (v - 1))
+        PostfixInc -> do
+            setVar var (Int (v + 1))
+        PostfixDec -> do
+            setVar var (Int (v - 1))
+
+-- Assign expression - Just simple assigns (OpAssign) creates automatic global variables
+evalExpr env (AssignExpr op (LVar var) expr) = do
     v <- stateLookup env var
     e <- evalExpr env expr
-    case v of
-        Gvar -> createGlobalVar var e
-        _ -> setVar var e
+    case op of
+        OpAssign -> do
+            case v of
+                Gvar -> createGlobalVar var e
+                _ -> setVar var e
+        OpAssignAdd -> do
+            x <- infixOp env OpAdd v e
+            setVar var x
+        OpAssignSub -> do
+            x <- infixOp env OpSub v e
+            setVar var x
+        OpAssignMul -> do
+            x <- infixOp env OpMul v e
+            setVar var x
+        OpAssignDiv -> do
+            x <- infixOp env OpDiv v e
+            setVar var x
+        OpAssignMod -> do
+            x <- infixOp env OpMod v e
+            setVar var x
+        OpAssignLShift -> do
+            x <- infixOp env OpLShift v e
+            setVar var x
+        OpAssignSpRShift -> do
+            x <- infixOp env OpSpRShift v e
+            setVar var x
+        OpAssignZfRShift -> do
+            x <- infixOp env OpZfRShift v e
+            setVar var x
+        OpAssignBAnd -> do
+            x <- infixOp env OpBAnd v e
+            setVar var x
+        OpAssignBOr -> do
+            x <- infixOp env OpBOr v e
+            setVar var x
+        OpAssignBXor -> do
+            x <- infixOp env OpBXor v e
+            setVar var x
 
 -- Call Function
 evalExpr env (CallExpr name params) = do
@@ -267,9 +320,9 @@ evaluate env stmts = foldl1 (>>) $ map (evalStmt env) stmts
 
 -- Implementation of prefix operations
 prefixOp :: StateT -> PrefixOp -> Value -> StateTransformer Value
-prefixOp env PrefixLNot  (Int  v) = return $ Int  $ (-v)
+prefixOp env PrefixLNot   (Int  v) = return $ Int  $ (-v)
 prefixOp env PrefixMinus  (Int  v) = return $ Int  $ (-v)
-prefixOp env PrefixBNot  (Bool  v) = return $ Bool  $ not v
+prefixOp env PrefixBNot   (Bool  v) = return $ Bool  $ not v
 
 
 infixOp :: StateT -> InfixOp -> Value -> Value -> StateTransformer Value
@@ -278,13 +331,22 @@ infixOp env OpSub  (Int  v1) (Int  v2) = return $ Int  $ v1 - v2
 infixOp env OpMul  (Int  v1) (Int  v2) = return $ Int  $ v1 * v2
 infixOp env OpDiv  (Int  v1) (Int  v2) = return $ Int  $ div v1 v2
 infixOp env OpMod  (Int  v1) (Int  v2) = return $ Int  $ mod v1 v2
+
+infixOp env OpLShift    (Int  v1) (Int  v2) = return $ Int  $ shiftL v1 v2
+infixOp env OpSpRShift  (Int  v1) (Int  v2) = return $ Int  $ shiftR v1 v2
+-- OpZfRShift >>> Logical right shitf not implemented
+infixOp env OpZfRShift  (Int  v1) (Int  v2) = error $ "Operation not implemented"
+
+
+infixOp env OpEq   (Int  v1) (Int  v2) = return $ Bool $ v1 == v2
+infixOp env OpNEq  (Int  v1) (Int  v2) = return $ Bool $ v1 /= v2
 infixOp env OpLT   (Int  v1) (Int  v2) = return $ Bool $ v1 < v2
 infixOp env OpLEq  (Int  v1) (Int  v2) = return $ Bool $ v1 <= v2
 infixOp env OpGT   (Int  v1) (Int  v2) = return $ Bool $ v1 > v2
 infixOp env OpGEq  (Int  v1) (Int  v2) = return $ Bool $ v1 >= v2
-infixOp env OpEq   (Int  v1) (Int  v2) = return $ Bool $ v1 == v2
--- Added different operation to Int values
-infixOp env OpNEq  (Int  v1) (Int  v2) = return $ Bool $ v1 /= v2
+infixOp env OpBAnd (Int  v1) (Int  v2) = error $ "Operation not implemented"
+infixOp env OpBOr  (Int  v1) (Int  v2) = error $ "Operation not implemented"
+infixOp env OpBXor (Int  v1) (Int  v2) = error $ "Operation not implemented"
 
 infixOp env OpEq   (Bool v1) (Bool v2) = return $ Bool $ v1 == v2
 infixOp env OpNEq  (Bool v1) (Bool v2) = return $ Bool $ v1 /= v2
