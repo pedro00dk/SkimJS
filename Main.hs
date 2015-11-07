@@ -505,8 +505,8 @@ evalExpr env (CallExpr name params) = do
             case v of
                 Break -> error $ "Illegal break statement in function"
                 Continue -> error $ "Illegal continue statement in function"
-                Throw t -> error $ "Illegal throw statement without handle"
-                Return r -> return r;
+                Throw t -> return (Throw t)
+                Return r -> return r
                 NReturn -> return Nil
                 _ -> return Nil
         _ -> error $ "Variable " ++ show name ++ " not is a function"
@@ -736,6 +736,14 @@ evalStmt env (DoWhileStmt stmt expr) = do
 -- For
 evalStmt env (ForStmt init test inc stmt) = forBegin env init test inc stmt
 
+-- For in
+evalStmt env (ForInStmt (ForInVar (Id id)) objexpr stmt) = do
+    obj <- evalExpr env objexpr
+    forInLoop env id obj stmt
+evalStmt env (ForInStmt (ForInLVal (LVar id)) objexpr stmt) = do
+    obj <- evalExpr env objexpr
+    forInLoop env id obj stmt
+
 -- Break
 evalStmt env (BreakStmt m) = return Break;
 
@@ -810,6 +818,50 @@ evalClause env (cl:xs) = do
                 Return r -> return (Return r)
                 NReturn -> return Nil
                 _ -> evalClause env xs
+
+
+-- For in support function
+forInLoop :: StateT -> String -> Value -> Statement -> StateTransformer Value
+forInLoop env id (Object []) stmt = return Nil
+forInLoop env id (Object (attr:xs)) stmt = do
+    case attr of
+        IDType i val -> do
+            pushScope env
+            createLocalVar id (String i)
+            v <- evalStmt env stmt
+            popScope env
+            case v of
+                Break -> return Nil
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return NReturn
+                Continue -> forInLoop env id (Object []) stmt
+                _ -> forInLoop env id (Object []) stmt
+        STRType s val -> do
+            pushScope env
+            createLocalVar id (String s)
+            v <- evalStmt env stmt
+            popScope env
+            case v of
+                Break -> return Nil
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return NReturn
+                Continue -> forInLoop env id (Object []) stmt
+                _ -> forInLoop env id (Object []) stmt
+        INTType n val -> do
+            pushScope env
+            createLocalVar id (Int (fromInteger n))
+            v <- evalStmt env stmt
+            popScope env
+            case v of
+                Break -> return Nil
+                Throw t -> return (Throw t)
+                Return r -> return (Return r)
+                NReturn -> return NReturn
+                Continue -> forInLoop env id (Object []) stmt
+                _ -> forInLoop env id (Object []) stmt
+
 
 
 -- For support functions
