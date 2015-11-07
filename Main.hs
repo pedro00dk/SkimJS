@@ -33,6 +33,139 @@ evalExpr env (BracketRef expr idexpr) = do
         _ -> do
             id <- evalExpr env idexpr
             getObjectBraketProperty env obj id
+
+-- Unary assign expressions to object property values using dot
+evalExpr env (UnaryAssignExpr op (LDot objexpr prop)) = do
+    obj <- evalExpr env objexpr
+    case op of
+        PrefixInc -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpAdd act (Int 1)
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> do
+                    setVar var obj -- updates the memory just if is a object var
+                    return x
+                _ -> return x
+        PrefixDec -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpSub act (Int 1)
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> do
+                    setVar var obj -- updates the memory just if is a object var
+                    return x
+                _ -> return x
+        PostfixInc -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpAdd act (Int 1)
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> do
+                    setVar var obj -- updates the memory just if is a object var
+                    return act
+                _ -> return act
+        PostfixDec -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpAdd act (Int 1)
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> do
+                    setVar var obj -- updates the memory just if is a object var
+                    return act
+                _ -> return act
+
+-- Assign expressions to object property values using dot
+evalExpr env (AssignExpr op (LDot objexpr prop) assignexpr) = do
+    obj <- evalExpr env objexpr
+    ass <- evalExpr env assignexpr
+    case op of
+        OpAssign -> do -- creates the property if not exists
+            obj <- setObjectDotProperty env obj (Id prop) ass
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignAdd -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpAdd act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignSub -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpSub act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignMul -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpMul act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignDiv -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpDiv act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignMod -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpMod act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignLShift -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpLShift act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignSpRShift -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpSpRShift act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignZfRShift -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpZfRShift act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignBAnd -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpBAnd act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignBOr -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpBOr act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+        OpAssignBXor -> do
+            act <- getObjectDotProperty env obj (Id prop)
+            x <- infixOp env OpBXor act ass
+            obj <- setObjectDotProperty env obj (Id prop) x
+            case objexpr of
+                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                _ -> return Nil
+
+
+
+
 ---------------------------------------------------------------------------------------------------
 evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
@@ -56,8 +189,10 @@ evalExpr env (UnaryAssignExpr op (LVar var)) = do
             return (Int (v - 1))
         PostfixInc -> do
             setVar var (Int (v + 1))
+            return $ Int v
         PostfixDec -> do
             setVar var (Int (v - 1))
+            return $ Int v
 
 -- Assign expression - Just simple assigns (OpAssign) creates automatic global variables
 evalExpr env (AssignExpr op (LVar var) expr) = do
@@ -147,7 +282,7 @@ parseObject env ((prop, expr):xs) (Object atts) =
         v <- evalExpr env expr
         parseObject env xs (Object (atts ++ [INTType num v]))
 
--- Gets an object property unsing dots, if have two or more equals properties, gets the first
+-- Gets an object property using dots, if have two or more equals properties, gets the first
 getObjectDotProperty :: StateT -> Value -> Id -> StateTransformer Value
 getObjectDotProperty env (Object []) (Id id) = error $ "Property not exists"
 getObjectDotProperty env (Object (attr:xs)) (Id prop) = case attr of
@@ -180,15 +315,36 @@ getObjectBraketProperty env (Object (attr:xs)) prop =
                 IDType id val -> getObjectBraketProperty env (Object xs) prop
                 STRType str val -> getObjectBraketProperty env (Object xs) prop
                 INTType num val -> do
-                    Bool b <- equalsStr env (show num) (show prop)
+                    Bool b <- equalsStr env (show num) (show int)
                     if b then return val else getObjectBraketProperty env (Object xs) prop
         _ -> error $ "Not implemented"
+
+
+setObjectDotProperty :: StateT -> Value -> Id -> Value -> StateTransformer Value
+-- If the property doesnt exists, the function creates the property
+setObjectDotProperty env (Object []) (Id prop) val = return $ Object $ [IDType prop val]
+setObjectDotProperty env (Object (attr:xs)) (Id prop) val = case attr of
+    IDType id _ -> do
+        Bool b <- equalsStr env id prop
+        if b then return (Object ((IDType id val):xs)) else do
+            Object attrs <- setObjectDotProperty env (Object xs) (Id prop) val
+            return (Object (attr:attrs))
+    STRType str _ -> do
+        Bool b <- equalsStr env str prop
+        if b then return (Object ((STRType str val):xs)) else do
+            Object attrs <- setObjectDotProperty env (Object xs) (Id prop) val
+            return (Object (attr:attrs))
+    INTType num _ -> do -- dot refer dont work with num properties
+        Object attrs <- setObjectDotProperty env (Object xs) (Id prop) val
+        return (Object (attr:attrs))
 
 -- Verify if two strings are equals
 equalsStr :: StateT -> String -> String -> StateTransformer Value
 equalsStr env [] [] = return $ Bool True
 equalsStr env (c1:xs) (c2:ys) = if c1 == c2 then equalsStr env xs ys else return $ Bool False
 equalsStr _ _ _ = return $ Bool False
+
+
 
 ---------------------------------------------------------------------------------------------------
 
@@ -208,7 +364,7 @@ evalStmt env (BlockStmt (stmt:stmts)) = do
         Continue -> return Continue
         Throw t -> return (Throw t)
         Return r -> return (Return r)
-        NReturn -> return Nil
+        NReturn -> return NReturn
         _ -> evalStmt env (BlockStmt stmts)
 
 -- If
@@ -260,10 +416,10 @@ evalStmt env (WhileStmt expr stmt) = do
         v <- evalStmt env stmt
         popScope env
         case v of
-            Break -> return Break
+            Break -> return Nil
             Throw t -> return (Throw t)
             Return r -> return (Return r)
-            NReturn -> return Nil
+            NReturn -> return NReturn
             Continue -> evalStmt env (WhileStmt expr stmt)
             _ -> evalStmt env (WhileStmt expr stmt)
         
@@ -276,10 +432,10 @@ evalStmt env (DoWhileStmt stmt expr) = do
     Bool b <- evalExpr env expr
     popScope env
     case v of
-        Break -> return Break
+        Break -> return Nil
         Throw t -> return (Throw t)
         Return r -> return (Return r)
-        NReturn -> return Nil
+        NReturn -> return NReturn
         Continue -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
         _ -> if b then evalStmt env (DoWhileStmt stmt expr) else return Nil
 
@@ -312,15 +468,15 @@ evalStmt env (TryStmt stmt catch finally) = do
                     evalStmt env cstmt
                     popScope env
         Return r -> return (Return r)
-        NReturn -> return Nil
-        Continue -> return Break
+        NReturn -> return NReturn
+        Continue -> return Continue
         _ -> return Nil
     case finally of
         Nothing -> popScope env
         Just fstmt -> do
-            evalStmt env fstmt
+            v <- evalStmt env fstmt
             popScope env
-
+            return v
 
 -- functions
 -- saving a function as a value
@@ -378,7 +534,7 @@ forBegin env init test inc stmt = do
             case v of
                 Break -> do
                     popScope env
-                    return Break
+                    return Nil
                 Throw t -> do
                     popScope env
                     return (Throw t)
@@ -387,7 +543,7 @@ forBegin env init test inc stmt = do
                     return (Return r)
                 NReturn -> do
                     popScope env
-                    return Nil
+                    return NReturn
                 Continue -> do
                     forContinue env init test inc stmt
                     popScope env
@@ -403,7 +559,7 @@ forBegin env init test inc stmt = do
                 case v of
                     Break -> do
                         popScope env
-                        return Break
+                        return Nil
                     Throw t -> do
                         popScope env
                         return (Throw t)
@@ -412,7 +568,7 @@ forBegin env init test inc stmt = do
                         return (Return r)
                     NReturn -> do
                         popScope env
-                        return Nil
+                        return NReturn
                     Continue -> do
                         forContinue env init test inc stmt
                         popScope env
@@ -426,7 +582,6 @@ forContinue env init test inc stmt = do
     case inc of
         Nothing -> return Nil
         Just expr -> evalExpr env expr
-    Bool b <- return (Bool False)
     case test of
         Nothing -> do
             pushScope env
@@ -436,7 +591,7 @@ forContinue env init test inc stmt = do
                 Break -> return Break
                 Throw t -> return (Throw t)
                 Return r -> return (Return r)
-                NReturn -> return Nil
+                NReturn -> return NReturn
                 Continue -> forContinue env init test inc stmt
                 _ -> forContinue env init test inc stmt
         Just expr -> do
@@ -449,7 +604,7 @@ forContinue env init test inc stmt = do
                     Break -> return Break
                     Throw t -> return (Throw t)
                     Return r -> return (Return r)
-                    NReturn -> return Nil
+                    NReturn -> return NReturn
                     Continue -> forContinue env init test inc stmt
                     _ -> forContinue env init test inc stmt
             else return Nil
