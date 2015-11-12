@@ -734,9 +734,9 @@ evalStmt env (BlockStmt (stmt:stmts)) = do
 evalStmt env (IfSingleStmt expr stmt) = do
     Bool v <- evalExpr env expr
     if v then do
-        pushScope env
+        --pushScope env
         a <- evalStmt env stmt
-        popScope env
+        --popScope env
         return a
     else return Nil
 
@@ -744,14 +744,14 @@ evalStmt env (IfSingleStmt expr stmt) = do
 evalStmt env (IfStmt expr stmt1 stmt2) = do
     Bool v <- evalExpr env expr
     if v then do
-        pushScope env
+        --pushScope env
         a <- evalStmt env stmt1
-        popScope env
+        --popScope env
         return a
     else do
-        pushScope env
+        --pushScope env
         a <- evalStmt env stmt2
-        popScope env
+        --popScope env
         return a
 
 -- SwitchStmt Expression [CaseClause]
@@ -765,9 +765,9 @@ evalStmt env (SwitchStmt expr (cl:xs)) = do
             ac <- evalExpr env cexpr
             Bool b <- infixOp env OpEq a ac
             if b then do -- Multiple switch clauses uses the same scope
-                pushScope env
+                --pushScope env
                 v <- evalClause env (cl:xs)
-                popScope env
+                --popScope env
                 return v
             else evalStmt env (SwitchStmt expr xs)
 
@@ -775,9 +775,9 @@ evalStmt env (SwitchStmt expr (cl:xs)) = do
 evalStmt env (WhileStmt expr stmt) = do
     Bool b <- evalExpr env expr
     if b then do 
-        pushScope env
+        --pushScope env
         v <- evalStmt env stmt
-        popScope env
+        --popScope env
         case v of
             Break -> return Nil
             Throw t -> return (Throw t)
@@ -790,10 +790,10 @@ evalStmt env (WhileStmt expr stmt) = do
 
 -- Do While
 evalStmt env (DoWhileStmt stmt expr) = do
-    pushScope env
+    --pushScope env
     v <- evalStmt env stmt
     Bool b <- evalExpr env expr
-    popScope env
+    --popScope env
     case v of
         Break -> return Nil
         Throw t -> return (Throw t)
@@ -826,7 +826,7 @@ evalStmt env (ThrowStmt expr) = do
 
 -- Try - Catch and finally can read the throw scope vars, but finally cant read the catch vars, so, catch needs of a new scope
 evalStmt env (TryStmt stmt catch finally) = do
-    pushScope env
+    --pushScope env
     v <- evalStmt env stmt
     case v of
         Break -> return Break
@@ -834,19 +834,19 @@ evalStmt env (TryStmt stmt catch finally) = do
             case catch of
                 Nothing -> return Nil
                 Just (CatchClause (Id id) cstmt) -> do
-                    pushScope env
+                    --pushScope env
                     createLocalVar id t
                     evalStmt env cstmt
-                    popScope env
+                    --popScope env
         Return r -> return (Return r)
         NReturn -> return NReturn
         Continue -> return Continue
         _ -> return Nil
     case finally of
-        Nothing -> popScope env
+        Nothing -> return Nil --popScope env
         Just fstmt -> do
             v <- evalStmt env fstmt
-            popScope env
+            --popScope env
             return v
 
 -- functions
@@ -893,10 +893,10 @@ evalClause env (cl:xs) = do
 forInLoop :: StateT -> String -> Value -> Statement -> StateTransformer Value
 forInLoop env id (Array []) stmt = return Nil
 forInLoop env id (Array (val:xs)) stmt = do
-    pushScope env
+    --pushScope env
     createLocalVar id val
     v <- evalStmt env stmt
-    popScope env
+    --popScope env
     case v of
         Break -> return Nil
         Throw t -> return (Throw t)
@@ -909,10 +909,10 @@ forInLoop env id (Object []) stmt = return Nil
 forInLoop env id (Object (attr:xs)) stmt = do
     case attr of
         IDType i val -> do
-            pushScope env
+            --pushScope env
             createLocalVar id (String i)
             v <- evalStmt env stmt
-            popScope env
+            --popScope env
             case v of
                 Break -> return Nil
                 Throw t -> return (Throw t)
@@ -921,10 +921,10 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 Continue -> forInLoop env id (Object xs) stmt
                 _ -> forInLoop env id (Object xs) stmt
         STRType s val -> do
-            pushScope env
+            --pushScope env
             createLocalVar id (String s)
             v <- evalStmt env stmt
-            popScope env
+            --popScope env
             case v of
                 Break -> return Nil
                 Throw t -> return (Throw t)
@@ -933,10 +933,10 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 Continue -> forInLoop env id (Object xs) stmt
                 _ -> forInLoop env id (Object xs) stmt
         INTType n val -> do
-            pushScope env
+            --pushScope env
             createLocalVar id (Int (fromInteger n))
             v <- evalStmt env stmt
-            popScope env
+            --popScope env
             case v of
                 Break -> return Nil
                 Throw t -> return (Throw t)
@@ -944,67 +944,67 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 NReturn -> return NReturn
                 Continue -> forInLoop env id (Object xs) stmt
                 _ -> forInLoop env id (Object xs) stmt
-forInLoop _ _ x _ = trace (show x) error $ "wtf error"
+forInLoop _ _ x _ = error $ "Illegal for in type"
 
 
 -- For support functions
 forBegin :: StateT -> ForInit -> Maybe Expression -> Maybe Expression -> Statement -> StateTransformer Value
 forBegin env init test inc stmt = do
-    pushScope env
+    --pushScope env
     case init of
         NoInit -> return Nil
         VarInit vars -> evalStmt env (VarDeclStmt vars) -- Create local vars
         ExprInit expr -> evalExpr env expr
     case test of
         Nothing -> do
-            pushScope env
+            --pushScope env
             v <- evalStmt env stmt
-            popScope env
+            --popScope env
             case v of
                 Break -> do
-                    popScope env
+                    --popScope env
                     return Nil
                 Throw t -> do
-                    popScope env
+                    --popScope env
                     return (Throw t)
                 Return r -> do
-                    popScope env
+                    --popScope env
                     return (Return r)
                 NReturn -> do
-                    popScope env
+                    --popScope env
                     return NReturn
                 Continue -> do
                     forContinue env init test inc stmt
-                    popScope env
+                    --popScope env
                 _ -> do
                     forContinue env init test inc stmt
-                    popScope env
+                    --popScope env
         Just expr -> do
             Bool b <- evalExpr env expr
             if b then do
-                pushScope env
+                --pushScope env
                 v <- evalStmt env stmt
-                popScope env
+                --popScope env
                 case v of
                     Break -> do
-                        popScope env
+                        --popScope env
                         return Nil
                     Throw t -> do
-                        popScope env
+                        --popScope env
                         return (Throw t)
                     Return r -> do
-                        popScope env
+                        --popScope env
                         return (Return r)
                     NReturn -> do
-                        popScope env
+                        --popScope env
                         return NReturn
                     Continue -> do
                         forContinue env init test inc stmt
-                        popScope env
+                        --popScope env
                     _ -> do
                         forContinue env init test inc stmt
-                        popScope env
-            else popScope env
+                        --popScope env
+            else return Nil --popScope env
 
 forContinue :: StateT -> ForInit -> Maybe Expression -> Maybe Expression -> Statement -> StateTransformer Value
 forContinue env init test inc stmt = do
@@ -1013,9 +1013,9 @@ forContinue env init test inc stmt = do
         Just expr -> evalExpr env expr
     case test of
         Nothing -> do
-            pushScope env
+            --pushScope env
             v <- evalStmt env stmt
-            popScope env
+            --popScope env
             case v of
                 Break -> return Break
                 Throw t -> return (Throw t)
@@ -1026,9 +1026,9 @@ forContinue env init test inc stmt = do
         Just expr -> do
             Bool b <- evalExpr env expr
             if b then do
-                pushScope env
+                --pushScope env
                 v <- evalStmt env stmt
-                popScope env
+                --popScope env
                 case v of
                     Break -> return Break
                     Throw t -> return (Throw t)
