@@ -17,6 +17,8 @@ evalExpr env (IntLit int) = return $ Int int
 evalExpr env (BoolLit bool) = return $ Bool bool
 ---------------------------------------------------------------------------------------------------
 evalExpr env (StringLit str) = return $ String str
+evalExpr env (ArrayLit []) = return $ Array []
+evalExpr env (ArrayLit exprs) = parseArray env exprs (Array [])
 evalExpr env (ObjectLit []) = return $ Object $ []
 evalExpr env (ObjectLit props) = parseObject env props (Object [])
 
@@ -25,11 +27,17 @@ evalExpr env (DotRef expr id) = do
     obj <- evalExpr env expr
     getObjectDotProperty env obj id
 
--- Accessing properties using brackets -> can get all types of properties
+-- Accessing properties using brackets (from arrays or objects) -> can get all types of properties if is a object
 evalExpr env (BracketRef expr idexpr) = do
     obj <- evalExpr env expr
-    id <- evalExpr env idexpr
-    getObjectBracketProperty env obj id
+    case obj of
+        Array _ -> do
+            id <- evalExpr env idexpr
+            getArrayIndex env obj id
+        Object _ -> do
+            id <- evalExpr env idexpr
+            getObjectBracketProperty env obj id
+        _ -> error $ "Illegal type"
             
 
 -- Unary assign expressions to object property values using dot
@@ -161,47 +169,86 @@ evalExpr env (AssignExpr op (LDot objexpr prop) assignexpr) = do
                 VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
                 _ -> return Nil
 
--- Unary assign expressions to object property values using brackets
+-- Unary assign expressions to object or arrays property values using brackets
 evalExpr env (UnaryAssignExpr op (LBracket objexpr propexpr)) = do
     obj <- evalExpr env objexpr
     prop <- evalExpr env propexpr
-    case op of
-        PrefixInc -> do -- creates the property if not exists
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpAdd act (Int 1)
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> do
-                    setVar var obj -- updates the memory just if is a object var
-                    return x
-                _ -> return x
-        PrefixDec -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpSub act (Int 1)
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> do
-                    setVar var obj -- updates the memory just if is a object var
-                    return x
-                _ -> return x
-        PostfixInc -> do -- creates the property if not exists
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpAdd act (Int 1)
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> do
-                    setVar var obj -- updates the memory just if is a object var
-                    return act
-                _ -> return act
-        PostfixDec -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpSub act (Int 1)
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> do
-                    setVar var obj -- updates the memory just if is a object var
-                    return act
-                _ -> return act
+    case obj of
+        Array _ -> case op of
+            PrefixInc -> do -- creates the property if not exists
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpAdd act (Int 1)
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return x
+                    _ -> return x
+            PrefixDec -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpSub act (Int 1)
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return x
+                    _ -> return x
+            PostfixInc -> do -- creates the property if not exists
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpAdd act (Int 1)
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return act
+                    _ -> return act
+            PostfixDec -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpSub act (Int 1)
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return act
+                    _ -> return act
+        Object _ -> case op of
+            PrefixInc -> do -- creates the property if not exists
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpAdd act (Int 1)
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return x
+                    _ -> return x
+            PrefixDec -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpSub act (Int 1)
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return x
+                    _ -> return x
+            PostfixInc -> do -- creates the property if not exists
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpAdd act (Int 1)
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return act
+                    _ -> return act
+            PostfixDec -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpSub act (Int 1)
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> do
+                        setVar var obj -- updates the memory just if is a object var
+                        return act
+                    _ -> return act
+        _ -> error $ "Illegal access"
 
 
 -- Assign expressions to object property values using brackets
@@ -209,90 +256,174 @@ evalExpr env (AssignExpr op (LBracket objexpr propexpr) assignexpr) = do
     obj <- evalExpr env objexpr
     ass <- evalExpr env assignexpr
     prop <- evalExpr env propexpr
-    case op of
-        OpAssign -> do -- creates the property if not exists
-            obj <- setObjectBracketProperty env obj prop ass
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignAdd -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpAdd act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignSub -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpSub act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignMul -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpMul act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignDiv -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpDiv act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignMod -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpMod act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignLShift -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpLShift act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignSpRShift -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpSpRShift act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignZfRShift -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpZfRShift act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignBAnd -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpBAnd act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignBOr -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpBOr act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-        OpAssignBXor -> do
-            act <- getObjectBracketProperty env obj prop
-            x <- infixOp env OpBXor act ass
-            obj <- setObjectBracketProperty env obj prop x
-            case objexpr of
-                VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
-                _ -> return Nil
-
+    case obj of
+        Array _ -> case op of
+            OpAssign -> do -- creates the property if not exists
+                obj <- setArrayIndex env obj prop ass
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignAdd -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpAdd act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignSub -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpSub act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignMul -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpMul act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignDiv -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpDiv act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignMod -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpMod act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignLShift -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpLShift act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignSpRShift -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpSpRShift act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignZfRShift -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpZfRShift act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBAnd -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpBAnd act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBOr -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpBOr act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBXor -> do
+                act <- getArrayIndex env obj prop
+                x <- infixOp env OpBXor act ass
+                obj <- setArrayIndex env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+        Object _ -> case op of
+            OpAssign -> do -- creates the property if not exists
+                obj <- setObjectBracketProperty env obj prop ass
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignAdd -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpAdd act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignSub -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpSub act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignMul -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpMul act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignDiv -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpDiv act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignMod -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpMod act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignLShift -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpLShift act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignSpRShift -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpSpRShift act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignZfRShift -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpZfRShift act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBAnd -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpBAnd act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBOr -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpBOr act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+            OpAssignBXor -> do
+                act <- getObjectBracketProperty env obj prop
+                x <- infixOp env OpBXor act ass
+                obj <- setObjectBracketProperty env obj prop x
+                case objexpr of
+                    VarRef (Id var) -> setVar var obj -- updates the memory just if is a object var
+                    _ -> return Nil
+        _ -> error $ "Illegal access"
 ---------------------------------------------------------------------------------------------------
 evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
@@ -380,6 +511,23 @@ evalExpr env (CallExpr name params) = do
                 Return r -> return r
                 NReturn -> return Nil
                 _ -> return Nil
+        Gvar ->
+			do {
+				Array vals <- evalExpr env (head params);
+				Bool b <- equalsStr env (show name) "VarRef (Id \"len\")";
+				if b && (null (tail params)) then return (Int (arraySize (Array vals))) else do
+				Bool b <- equalsStr env (show name) "VarRef (Id \"head\")";
+				if b && (null (tail params)) then return (head vals) else do
+				Bool b <- equalsStr env (show name) "VarRef (Id \"tail\")";
+				if b && (null (tail params)) then return (Array (tail vals)) else do
+				Bool b <- equalsStr env (show name) "VarRef (Id \"concat\")";
+				Array valsToConcat <- evalExpr env (head (tail params));
+				if b && (null (tail(tail params))) then return (Array ((vals)++(valsToConcat))) else do
+				Bool b <- equalsStr env (show name) "VarRef (Id \"compare\")";
+				Array valsToCompare <- evalExpr env (head (tail params));
+				if b && (null (tail(tail params))) then return (Bool (compareValues (Array vals) (Array valsToCompare)))
+				else error $ "Variable " ++ show name ++ " not is a function"
+			}
         _ -> error $ "Variable " ++ show name ++ " not is a function"
 ---------------------------------------------------------------------------------------------------
 
@@ -392,6 +540,34 @@ createArgs env ((Id arg):xs) (param:ys) = do
     createLocalVar arg v
     createArgs env xs ys
 createArgs env _ _ = error $ "Invalid amount of parameters"
+
+-- Creating array from expressions
+parseArray :: StateT -> [Expression] -> Value -> StateTransformer Value
+parseArray env [] (Array []) = return $ Array []
+parseArray env [] (Array vls) = return $ Array vls
+parseArray env (expr:xs) (Array vls) = do
+    v <- evalExpr env expr
+    parseArray env xs (Array (vls ++ [v]))
+
+-- Get a value from the index array
+getArrayIndex :: StateT -> Value -> Value -> StateTransformer Value
+getArrayIndex env (Array []) _ = error $ "Array index out of bounds"
+getArrayIndex env (Array (x:xs)) index =
+    case index of
+        Int t -> if t < 0 then error $ "Negative index"
+            else if t == 0 then return x else getArrayIndex env (Array xs) (Int (t - 1))
+        _ -> error $ "Illegal argument type"
+
+setArrayIndex :: StateT -> Value -> Value -> Value -> StateTransformer Value
+setArrayIndex env (Array []) _ _ = error $ "Array index out of bounds"
+setArrayIndex env (Array (x:xs)) index val =
+    case index of
+        Int t -> if t < 0 then error $ "Negative index"
+            else if t == 0 then return (Array (val:xs))
+            else do
+                Array vals <- setArrayIndex env (Array xs) (Int (t - 1)) val
+                return (Array (x:vals))
+        _ -> error $ "Illegal argument type"
 
 -- Create Object from properties
 parseObject :: StateT -> [(Prop, Expression)] -> Value -> StateTransformer Value
@@ -509,8 +685,30 @@ equalsStr env [] [] = return $ Bool True
 equalsStr env (c1:xs) (c2:ys) = if c1 == c2 then equalsStr env xs ys else return $ Bool False
 equalsStr _ _ _ = return $ Bool False
 
+-- Value comparator
+compareValues :: Value -> Value -> Bool
+compareValues (Int x) (Int y) = x == y
+compareValues (String x) (String y) = x == y
+compareValues (Var x) (Var y) = x == y
+compareValues (Object x) (Object y) = (compareObject (Object x) (Object y)) 
+compareValues (Array x) (Array y) = (compareArray (Array x) (Array y))
+compareValues _ _ = error $ "Unknown Type"
 
+compareArray (Array []) (Array []) = True
+compareArray (Array (x:xs)) (Array (y:ys)) = if (compareValues x y) then (compareArray (Array xs) (Array ys)) else False
+compareArray _ _ = False
 
+compareObject (Object []) (Object []) = True
+compareObject (Object (x:xs)) (Object (y:ys)) = if (compareAttribute x y) then (compareObject (Object xs) (Object ys)) else False
+compareObject _ _ = False
+
+compareAttribute (IDType s1 v1) (IDType s2 v2) = if (s1 == s2) && (compareValues v1 v2) then True else False
+compareAttribute (STRType s1 v1) (STRType s2 v2) = if (s1 == s2) && (compareValues v1 v2) then True else False
+compareAttribute (INTType i1 v1) (INTType i2 v2) = if (i1 == i2) && (compareValues v1 v2) then True else False
+compareAttribute _ _ = False
+
+arraySize (Array []) = 0
+arraySize (Array (x:xs)) = (1 + (arraySize (Array xs)))
 ---------------------------------------------------------------------------------------------------
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
@@ -911,7 +1109,7 @@ varDecl env (VarDecl (Id id) maybeExpr) = do
 -- Modified to set a var in the top scope
 setVar :: String -> Value -> StateTransformer Value
 setVar var val = ST $ \s -> (val, (updateVar var val s))
-    
+
 updateVar :: String -> Value -> StateT -> StateT
 updateVar _ _ [] = error $ "Unreachable error"
 updateVar var val stt = case (Map.lookup var (head stt)) of

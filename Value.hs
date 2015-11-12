@@ -17,6 +17,7 @@ data Value = Bool Bool
     | Return Value
     | NReturn
     | Gvar
+    | Array [Value]
 ---------------------------------------------------------------------------------------------------
     | Nil
 
@@ -42,6 +43,7 @@ instance Show Value where
   show Continue = "continue"
   show (Throw value) = "throw " ++ show value
   show (Function (Id name) args stmts) = "function " ++ name ++ "(" ++ showArgs args ++")"
+  show (Array v) = "Array [" ++ showArray v ++ "]"
 ---------------------------------------------------------------------------------------------------
   show Nil = "undefined"
 
@@ -58,12 +60,17 @@ showAttributes (att:xs) = case att of
     IDType id val -> show id ++ ": " ++ show val ++ showCommaAttributes xs
     STRType str val -> show str ++ ": " ++ show val ++ showCommaAttributes xs
     INTType int val -> show int ++ ": " ++ show val ++ showCommaAttributes xs
-
 showCommaAttributes [] = ""
 showCommaAttributes (att:xs) = case att of
     IDType id val -> ", " ++ show id ++ ": " ++ show val ++ showCommaAttributes xs
     STRType str val -> ", " ++ show str ++ ": " ++ show val ++ showCommaAttributes xs
     INTType int val -> ", " ++ show int ++ ": " ++ show val ++ showCommaAttributes xs
+
+-- Show array elements
+showArray [] = ""
+showArray (v:vs) = show v ++ showCommaArray vs
+showCommaArray [] = ""
+showCommaArray (v:vs) = ", " ++ show v ++ showCommaArray vs
 
 ---------------------------------------------------------------------------------------------------
 
