@@ -512,22 +512,22 @@ evalExpr env (CallExpr name params) = do
                 NReturn -> return Nil
                 _ -> return Nil
         Gvar ->
-			do {
-				Array vals <- evalExpr env (head params);
-				Bool b <- equalsStr env (show name) "VarRef (Id \"len\")";
-				if b && (null (tail params)) then return (Int (arraySize (Array vals))) else do
-				Bool b <- equalsStr env (show name) "VarRef (Id \"head\")";
-				if b && (null (tail params)) then return (head vals) else do
-				Bool b <- equalsStr env (show name) "VarRef (Id \"tail\")";
-				if b && (null (tail params)) then return (Array (tail vals)) else do
-				Bool b <- equalsStr env (show name) "VarRef (Id \"concat\")";
-				Array valsToConcat <- evalExpr env (head (tail params));
-				if b && (null (tail(tail params))) then return (Array ((vals)++(valsToConcat))) else do
-				Bool b <- equalsStr env (show name) "VarRef (Id \"compare\")";
-				Array valsToCompare <- evalExpr env (head (tail params));
-				if b && (null (tail(tail params))) then return (Bool (compareValues (Array vals) (Array valsToCompare)))
-				else error $ "Variable " ++ show name ++ " not is a function"
-			}
+            do {
+                Array vals <- evalExpr env (head params);
+                Bool b <- equalsStr env (show name) "VarRef (Id \"len\")";
+                if b && (null (tail params)) then return (Int (arraySize (Array vals))) else do
+                Bool b <- equalsStr env (show name) "VarRef (Id \"head\")";
+                if b && (null (tail params)) then return (head vals) else do
+                Bool b <- equalsStr env (show name) "VarRef (Id \"tail\")";
+                if b && (null (tail params)) then return (Array (tail vals)) else do
+                Bool b <- equalsStr env (show name) "VarRef (Id \"concat\")";
+                Array valsToConcat <- evalExpr env (head (tail params));
+                if b && (null (tail(tail params))) then return (Array ((vals)++(valsToConcat))) else do
+                Bool b <- equalsStr env (show name) "VarRef (Id \"compare\")";
+                Array valsToCompare <- evalExpr env (head (tail params));
+                if b && (null (tail(tail params))) then return (Bool (compareValues (Array vals) (Array valsToCompare)))
+                else error $ "Variable " ++ show name ++ " not is a function"
+            }
         _ -> error $ "Variable " ++ show name ++ " not is a function"
 ---------------------------------------------------------------------------------------------------
 
@@ -891,6 +891,20 @@ evalClause env (cl:xs) = do
 
 -- For in support function
 forInLoop :: StateT -> String -> Value -> Statement -> StateTransformer Value
+forInLoop env id (Array []) stmt = return Nil
+forInLoop env id (Array (val:xs)) stmt = do
+    pushScope env
+    createLocalVar id val
+    v <- evalStmt env stmt
+    popScope env
+    case v of
+        Break -> return Nil
+        Throw t -> return (Throw t)
+        Return r -> return (Return r)
+        NReturn -> return NReturn
+        Continue -> forInLoop env id (Array xs) stmt
+        _ -> forInLoop env id (Array xs) stmt
+
 forInLoop env id (Object []) stmt = return Nil
 forInLoop env id (Object (attr:xs)) stmt = do
     case attr of
@@ -904,8 +918,8 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 Throw t -> return (Throw t)
                 Return r -> return (Return r)
                 NReturn -> return NReturn
-                Continue -> forInLoop env id (Object []) stmt
-                _ -> forInLoop env id (Object []) stmt
+                Continue -> forInLoop env id (Object xs) stmt
+                _ -> forInLoop env id (Object xs) stmt
         STRType s val -> do
             pushScope env
             createLocalVar id (String s)
@@ -916,8 +930,8 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 Throw t -> return (Throw t)
                 Return r -> return (Return r)
                 NReturn -> return NReturn
-                Continue -> forInLoop env id (Object []) stmt
-                _ -> forInLoop env id (Object []) stmt
+                Continue -> forInLoop env id (Object xs) stmt
+                _ -> forInLoop env id (Object xs) stmt
         INTType n val -> do
             pushScope env
             createLocalVar id (Int (fromInteger n))
@@ -928,9 +942,9 @@ forInLoop env id (Object (attr:xs)) stmt = do
                 Throw t -> return (Throw t)
                 Return r -> return (Return r)
                 NReturn -> return NReturn
-                Continue -> forInLoop env id (Object []) stmt
-                _ -> forInLoop env id (Object []) stmt
-
+                Continue -> forInLoop env id (Object xs) stmt
+                _ -> forInLoop env id (Object xs) stmt
+forInLoop _ _ x _ = trace (show x) error $ "wtf error"
 
 
 -- For support functions
